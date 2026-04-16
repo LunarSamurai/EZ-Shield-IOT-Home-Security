@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.local.example
+.env.example
+*.env
+
+# Next.js
+webapp/.next/
+webapp/out/
+
+# Claude
+.claude/
+CLAUDE.md
+AGENTS.md
+webapp/CLAUDE.md
+webapp/AGENTS.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
