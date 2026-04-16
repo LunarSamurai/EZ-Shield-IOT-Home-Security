@@ -84,4 +84,24 @@ export interface AppConfig {
   auto_arm_time: string;
   alert_cooldown_seconds: string;
   ultrasonic_poll_interval_ms: string;
+  // Notification settings
+  emergency_email: string;
+  emergency_phone: string;
+  phone_carrier: string;
+  smtp_email: string;
+  smtp_password: string;
+  notify_email_enabled: string;
+  notify_sms_enabled: string;
+  notify_voice_enabled: string;
+  alarm_message: string;
+}
+
+export interface NotificationLog {
+  id: number;
+  alert_id: number | null;
+  channel: 'email' | 'sms' | 'voice';
+  recipient: string | null;
+  status: 'sent' | 'failed' | 'throttled';
+  error_message: string | null;
+  created_at: string;
 }

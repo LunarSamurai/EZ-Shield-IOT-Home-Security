@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlowButton from '@/components/ui/GlowButton';
+import { SMS_CARRIERS } from '@/lib/carriers';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -18,9 +19,19 @@ interface SettingsState {
   auto_arm_time: string;
   alert_cooldown_seconds: string;
   ultrasonic_poll_interval_ms: string;
+  // Notifications
+  emergency_email: string;
+  emergency_phone: string;
+  phone_carrier: string;
+  smtp_email: string;
+  smtp_password: string;
+  notify_email_enabled: string;
+  notify_sms_enabled: string;
+  notify_voice_enabled: string;
+  alarm_message: string;
 }
 
-const settingsLabels: Record<string, { label: string; description: string; type: 'number' | 'toggle' | 'time'; min?: number; max?: number }> = {
+const alarmLabels: Record<string, { label: string; description: string; type: 'number' | 'toggle' | 'time'; min?: number; max?: number }> = {
   entry_delay_seconds: { label: 'Entry Delay', description: 'Seconds before alarm triggers when door opens (armed)', type: 'number', min: 0, max: 300 },
   exit_delay_seconds: { label: 'Exit Delay', description: 'Seconds to leave after arming', type: 'number', min: 0, max: 300 },
   alarm_duration_seconds: { label: 'Alarm Duration', description: 'How long the alarm sounds (seconds)', type: 'number', min: 10, max: 3600 },
@@ -30,6 +41,8 @@ const settingsLabels: Record<string, { label: string; description: string; type:
   alert_cooldown_seconds: { label: 'Alert Cooldown', description: 'Minimum seconds between alerts for the same zone', type: 'number', min: 1, max: 600 },
   ultrasonic_poll_interval_ms: { label: 'Ultrasonic Poll Rate', description: 'How often to read ultrasonic sensors (ms)', type: 'number', min: 100, max: 10000 },
 };
+
+const inputClass = 'w-full bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-2 text-sm text-ez-white';
 
 export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<SettingsState | null>(null);
@@ -44,6 +57,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [newPin, setNewPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinSuccess, setPinSuccess] = useState('');
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -120,6 +134,51 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     setSettings((prev) => prev ? { ...prev, [key]: value } : prev);
   };
 
+  const renderSettingRow = (key: string, config: typeof alarmLabels[string]) => (
+    <div key={key} className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-ez-white">{config.label}</label>
+        {config.type === 'toggle' ? (
+          <button
+            onClick={() => updateSetting(key, settings![key as keyof SettingsState] === 'true' ? 'false' : 'true')}
+            className={`w-12 h-7 rounded-full transition-colors relative ${
+              settings![key as keyof SettingsState] === 'true' ? 'bg-ez-yellow' : 'bg-gray-600'
+            }`}
+          >
+            <div
+              className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                settings![key as keyof SettingsState] === 'true' ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        ) : config.type === 'time' ? (
+          <input
+            type="time"
+            value={settings![key as keyof SettingsState]}
+            onChange={(e) => updateSetting(key, e.target.value)}
+            className="bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-1.5 text-sm text-ez-white"
+          />
+        ) : (
+          <input
+            type="number"
+            value={settings![key as keyof SettingsState]}
+            onChange={(e) => updateSetting(key, e.target.value)}
+            className="w-24 bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-1.5 text-sm text-ez-white text-right"
+            min={config.min ?? 0}
+            max={config.max}
+          />
+        )}
+      </div>
+      <p className="text-xs text-gray-500">{config.description}</p>
+    </div>
+  );
+
+  const SectionHeader = ({ children }: { children: string }) => (
+    <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider border-b border-ez-navy-light/30 pb-2">
+      {children}
+    </h3>
+  );
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -139,7 +198,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="sticky top-0 bg-ez-navy/95 backdrop-blur-sm border-b border-ez-navy-light/30 p-4 flex items-center justify-between">
+            <div className="sticky top-0 bg-ez-navy/95 backdrop-blur-sm border-b border-ez-navy-light/30 p-4 flex items-center justify-between z-10">
               <h2 className="text-xl font-bold text-ez-yellow">Settings</h2>
               <button
                 onClick={onClose}
@@ -149,7 +208,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               </button>
             </div>
 
-            <div className="p-4 flex flex-col gap-6">
+            <div className="p-4 flex flex-col gap-6 pb-20">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="w-8 h-8 border-2 border-ez-yellow/30 border-t-ez-yellow rounded-full animate-spin" />
@@ -157,71 +216,169 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               ) : loadError ? (
                 <div className="text-center py-12">
                   <p className="text-red-400 mb-4">{loadError}</p>
-                  <GlowButton variant="blue" size="sm" onClick={() => { setLoading(true); setLoadError(''); fetch('/api/settings').then(r => r.json()).then(d => { setSettings(d); setLoading(false); }).catch(() => { setLoadError('Still unable to load settings'); setLoading(false); }); }}>
+                  <GlowButton variant="blue" size="sm" onClick={() => { setLoading(true); setLoadError(''); fetch('/api/settings').then(r => r.json()).then(d => { setSettings(d); setLoading(false); }).catch(() => { setLoadError('Still unable to load'); setLoading(false); }); }}>
                     Retry
                   </GlowButton>
                 </div>
               ) : settings && (
                 <>
-                  {/* Alarm Settings */}
+                  {/* ===== NOTIFICATIONS SECTION ===== */}
                   <div className="flex flex-col gap-4">
-                    <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider border-b border-ez-navy-light/30 pb-2">
-                      Alarm Timing
-                    </h3>
-                    {Object.entries(settingsLabels).map(([key, config]) => (
-                      <div key={key} className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between">
-                          <label className="text-sm font-medium text-ez-white">{config.label}</label>
-                          {config.type === 'toggle' ? (
-                            <button
-                              onClick={() => updateSetting(key, settings[key as keyof SettingsState] === 'true' ? 'false' : 'true')}
-                              className={`w-12 h-7 rounded-full transition-colors relative ${
-                                settings[key as keyof SettingsState] === 'true' ? 'bg-ez-yellow' : 'bg-gray-600'
-                              }`}
-                            >
-                              <div
-                                className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
-                                  settings[key as keyof SettingsState] === 'true' ? 'translate-x-6' : 'translate-x-1'
-                                }`}
-                              />
-                            </button>
-                          ) : config.type === 'time' ? (
-                            <input
-                              type="time"
-                              value={settings[key as keyof SettingsState]}
-                              onChange={(e) => updateSetting(key, e.target.value)}
-                              className="bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-1.5 text-sm text-ez-white"
-                            />
-                          ) : (
-                            <input
-                              type="number"
-                              value={settings[key as keyof SettingsState]}
-                              onChange={(e) => updateSetting(key, e.target.value)}
-                              className="w-24 bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-1.5 text-sm text-ez-white text-right"
-                              min={config.min ?? 0}
-                              max={config.max}
-                            />
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500">{config.description}</p>
+                    <SectionHeader>Emergency Notifications</SectionHeader>
+                    <p className="text-xs text-gray-400 -mt-2">
+                      Get alerted instantly when your system detects an intrusion. Requires a Gmail account with an App Password.
+                    </p>
+
+                    {/* SMTP Config */}
+                    <div className="bg-ez-navy-light/10 rounded-xl p-4 border border-ez-navy-light/20 flex flex-col gap-3">
+                      <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Email Account (Gmail)</div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-gray-500">Gmail Address</label>
+                        <input
+                          type="email"
+                          value={settings.smtp_email || ''}
+                          onChange={(e) => updateSetting('smtp_email', e.target.value)}
+                          className={inputClass}
+                          placeholder="your.alerts@gmail.com"
+                        />
                       </div>
-                    ))}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-gray-500">App Password</label>
+                        <div className="flex gap-2">
+                          <input
+                            type={showSmtpPassword ? 'text' : 'password'}
+                            value={settings.smtp_password || ''}
+                            onChange={(e) => updateSetting('smtp_password', e.target.value)}
+                            className={`${inputClass} flex-1`}
+                            placeholder="xxxx xxxx xxxx xxxx"
+                          />
+                          <button
+                            onClick={() => setShowSmtpPassword(!showSmtpPassword)}
+                            className="px-3 text-xs text-gray-400 hover:text-ez-white transition-colors"
+                          >
+                            {showSmtpPassword ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          Google Account &gt; Security &gt; 2-Step Verification &gt; App Passwords
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Email Notification */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-ez-white">Email Alerts</label>
+                        <button
+                          onClick={() => updateSetting('notify_email_enabled', settings.notify_email_enabled === 'true' ? 'false' : 'true')}
+                          className={`w-12 h-7 rounded-full transition-colors relative ${
+                            settings.notify_email_enabled === 'true' ? 'bg-ez-yellow' : 'bg-gray-600'
+                          }`}
+                        >
+                          <div className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                            settings.notify_email_enabled === 'true' ? 'translate-x-6' : 'translate-x-1'
+                          }`} />
+                        </button>
+                      </div>
+                      {settings.notify_email_enabled === 'true' && (
+                        <input
+                          type="email"
+                          value={settings.emergency_email || ''}
+                          onChange={(e) => updateSetting('emergency_email', e.target.value)}
+                          className={inputClass}
+                          placeholder="Alert recipient email"
+                        />
+                      )}
+                      <p className="text-xs text-gray-500">Sends a detailed alarm email with zone info and timestamp</p>
+                    </div>
+
+                    {/* SMS Notification */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-ez-white">SMS Text Alerts</label>
+                        <button
+                          onClick={() => updateSetting('notify_sms_enabled', settings.notify_sms_enabled === 'true' ? 'false' : 'true')}
+                          className={`w-12 h-7 rounded-full transition-colors relative ${
+                            settings.notify_sms_enabled === 'true' ? 'bg-ez-yellow' : 'bg-gray-600'
+                          }`}
+                        >
+                          <div className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                            settings.notify_sms_enabled === 'true' ? 'translate-x-6' : 'translate-x-1'
+                          }`} />
+                        </button>
+                      </div>
+                      {settings.notify_sms_enabled === 'true' && (
+                        <div className="flex flex-col gap-2">
+                          <input
+                            type="tel"
+                            value={settings.emergency_phone || ''}
+                            onChange={(e) => updateSetting('emergency_phone', e.target.value)}
+                            className={inputClass}
+                            placeholder="(555) 123-4567"
+                          />
+                          <select
+                            value={settings.phone_carrier || ''}
+                            onChange={(e) => updateSetting('phone_carrier', e.target.value)}
+                            className={`${inputClass} appearance-none`}
+                          >
+                            <option value="">Select your carrier</option>
+                            {SMS_CARRIERS.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-500">Sends text via your carrier's email gateway — no extra service needed</p>
+                    </div>
+
+                    {/* Voice Alarm */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-ez-white">Voice Alarm on Dashboard</label>
+                        <button
+                          onClick={() => updateSetting('notify_voice_enabled', settings.notify_voice_enabled === 'true' ? 'false' : 'true')}
+                          className={`w-12 h-7 rounded-full transition-colors relative ${
+                            settings.notify_voice_enabled === 'true' ? 'bg-ez-yellow' : 'bg-gray-600'
+                          }`}
+                        >
+                          <div className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                            settings.notify_voice_enabled === 'true' ? 'translate-x-6' : 'translate-x-1'
+                          }`} />
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500">AI voice speaks the alarm through the dashboard speakers when triggered</p>
+                    </div>
+
+                    {/* Custom alarm message */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-sm font-medium text-ez-white">Alarm Message</label>
+                      <textarea
+                        value={settings.alarm_message || ''}
+                        onChange={(e) => updateSetting('alarm_message', e.target.value)}
+                        className={`${inputClass} h-20 resize-none`}
+                        placeholder="ALERT: Your home security system has been triggered."
+                      />
+                      <p className="text-xs text-gray-500">This message is included in all notifications and spoken by the voice alarm</p>
+                    </div>
+                  </div>
+
+                  {/* ===== ALARM TIMING ===== */}
+                  <div className="flex flex-col gap-4">
+                    <SectionHeader>Alarm Timing</SectionHeader>
+                    {Object.entries(alarmLabels).map(([key, config]) => renderSettingRow(key, config))}
                   </div>
 
                   {/* Save button */}
                   <div className="flex flex-col gap-2">
                     <GlowButton variant="yellow" size="md" onClick={handleSave} disabled={saving} className="w-full">
-                      {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
+                      {saving ? 'Saving...' : saved ? 'Saved!' : 'Save All Settings'}
                     </GlowButton>
                     {saveError && <p className="text-red-400 text-xs text-center">{saveError}</p>}
                   </div>
 
-                  {/* Change PIN Section */}
+                  {/* ===== SECURITY ===== */}
                   <div className="flex flex-col gap-4">
-                    <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider border-b border-ez-navy-light/30 pb-2">
-                      Security
-                    </h3>
-
+                    <SectionHeader>Security</SectionHeader>
                     {!changePinOpen ? (
                       <GlowButton variant="blue" size="md" onClick={() => setChangePinOpen(true)} className="w-full">
                         Change PIN
@@ -235,7 +392,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             value={currentPin}
                             onChange={(e) => setCurrentPin(e.target.value)}
                             maxLength={6}
-                            className="w-full bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-2 text-ez-white tracking-[0.3em] text-center font-mono"
+                            className={`${inputClass} tracking-[0.3em] text-center font-mono`}
                             placeholder="----"
                           />
                         </div>
@@ -246,7 +403,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                             value={newPin}
                             onChange={(e) => setNewPin(e.target.value)}
                             maxLength={6}
-                            className="w-full bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-2 text-ez-white tracking-[0.3em] text-center font-mono"
+                            className={`${inputClass} tracking-[0.3em] text-center font-mono`}
                             placeholder="----"
                           />
                         </div>

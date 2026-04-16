@@ -12,6 +12,8 @@ import SystemStatus from '@/components/dashboard/SystemStatus';
 import AlertBanner from '@/components/dashboard/AlertBanner';
 import PinSetupModal from '@/components/dashboard/PinSetupModal';
 import SettingsPanel from '@/components/dashboard/SettingsPanel';
+import VoiceAlarm from '@/components/dashboard/VoiceAlarm';
+import NotificationBanner from '@/components/dashboard/NotificationBanner';
 import { useSystemState } from '@/hooks/useSystemState';
 import { useRealtimeZones } from '@/hooks/useRealtimeZones';
 import { useAlerts } from '@/hooks/useAlerts';
@@ -32,6 +34,15 @@ export default function DashboardPage() {
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Notification settings state
+  const [notificationsConfigured, setNotificationsConfigured] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [alarmMessage, setAlarmMessage] = useState('');
+
+  // Find the zone that triggered the alarm (latest critical unacknowledged alert)
+  const triggeredAlert = unacknowledgedAlerts.find((a) => a.severity === 'critical');
+  const triggeredZoneName = triggeredAlert?.zone?.name || triggeredAlert?.message?.match(/ALARM: (.+?) —/)?.[1] || null;
+
   const fetchProfile = useCallback(async () => {
     const res = await fetch('/api/profile');
     if (res.ok) {
@@ -43,9 +54,31 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchNotificationSettings = useCallback(async () => {
+    const res = await fetch('/api/settings');
+    if (res.ok) {
+      const settings = await res.json();
+      // Notifications are "configured" if they have SMTP + at least one channel enabled
+      const hasSmtp = settings.smtp_email && settings.smtp_password;
+      const hasEmailOrSms = settings.notify_email_enabled === 'true' || settings.notify_sms_enabled === 'true';
+      const hasVoice = settings.notify_voice_enabled === 'true';
+      setNotificationsConfigured((hasSmtp && hasEmailOrSms) || hasVoice);
+      setVoiceEnabled(settings.notify_voice_enabled === 'true');
+      setAlarmMessage(settings.alarm_message || '');
+    }
+  }, []);
+
   useEffect(() => {
     fetchProfile();
-  }, [fetchProfile]);
+    fetchNotificationSettings();
+  }, [fetchProfile, fetchNotificationSettings]);
+
+  // Refetch notification settings when settings panel closes
+  useEffect(() => {
+    if (!settingsOpen) {
+      fetchNotificationSettings();
+    }
+  }, [settingsOpen, fetchNotificationSettings]);
 
   const handlePinSetup = async (pin: string) => {
     const res = await fetch('/api/pin', {
@@ -77,6 +110,15 @@ export default function DashboardPage() {
 
       {/* Settings slide-out */}
       <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* AI Voice Alarm — speaks and plays siren when alarm triggers */}
+      <VoiceAlarm
+        active={hasActiveAlarm}
+        zoneName={triggeredZoneName}
+        mode={mode}
+        voiceEnabled={voiceEnabled}
+        customMessage={alarmMessage}
+      />
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-ez-navy/95 backdrop-blur-sm border-b border-ez-navy-light/30">
@@ -131,6 +173,12 @@ export default function DashboardPage() {
 
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 py-6 flex flex-col gap-6">
+        {/* Notification setup banner */}
+        <NotificationBanner
+          configured={notificationsConfigured}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+
         {/* Alert Banner */}
         <AlertBanner alerts={unacknowledgedAlerts} hasActiveAlarm={hasActiveAlarm} />
 

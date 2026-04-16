@@ -41,6 +41,10 @@ export async function PUT(request: Request) {
     'entry_delay_seconds', 'exit_delay_seconds', 'alarm_duration_seconds',
     'siren_enabled', 'auto_arm_enabled', 'auto_arm_time',
     'alert_cooldown_seconds', 'ultrasonic_poll_interval_ms',
+    'emergency_email', 'emergency_phone', 'phone_carrier',
+    'smtp_email', 'smtp_password',
+    'notify_email_enabled', 'notify_sms_enabled', 'notify_voice_enabled',
+    'alarm_message',
   ];
 
   for (const [key, value] of Object.entries(updates)) {
