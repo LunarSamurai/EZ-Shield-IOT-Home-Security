@@ -12,6 +12,9 @@ node_modules/
 webapp/.next/
 webapp/out/
 
+# Supabase
+webapp/supabase/
+
 # Claude
 .claude/
 CLAUDE.md
