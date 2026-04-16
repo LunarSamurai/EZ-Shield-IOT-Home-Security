@@ -20,23 +20,26 @@ interface SettingsState {
   ultrasonic_poll_interval_ms: string;
 }
 
-const settingsLabels: Record<string, { label: string; description: string; type: 'number' | 'toggle' | 'time' }> = {
-  entry_delay_seconds: { label: 'Entry Delay', description: 'Seconds before alarm triggers when door opens (armed)', type: 'number' },
-  exit_delay_seconds: { label: 'Exit Delay', description: 'Seconds to leave after arming', type: 'number' },
-  alarm_duration_seconds: { label: 'Alarm Duration', description: 'How long the alarm sounds (seconds)', type: 'number' },
+const settingsLabels: Record<string, { label: string; description: string; type: 'number' | 'toggle' | 'time'; min?: number; max?: number }> = {
+  entry_delay_seconds: { label: 'Entry Delay', description: 'Seconds before alarm triggers when door opens (armed)', type: 'number', min: 0, max: 300 },
+  exit_delay_seconds: { label: 'Exit Delay', description: 'Seconds to leave after arming', type: 'number', min: 0, max: 300 },
+  alarm_duration_seconds: { label: 'Alarm Duration', description: 'How long the alarm sounds (seconds)', type: 'number', min: 10, max: 3600 },
   siren_enabled: { label: 'Siren Enabled', description: 'Enable audible siren on alarm', type: 'toggle' },
   auto_arm_enabled: { label: 'Auto-Arm', description: 'Automatically arm the system at a set time', type: 'toggle' },
   auto_arm_time: { label: 'Auto-Arm Time', description: 'Time to auto-arm (24h format)', type: 'time' },
-  alert_cooldown_seconds: { label: 'Alert Cooldown', description: 'Minimum seconds between alerts for the same zone', type: 'number' },
-  ultrasonic_poll_interval_ms: { label: 'Ultrasonic Poll Rate', description: 'How often to read ultrasonic sensors (ms)', type: 'number' },
+  alert_cooldown_seconds: { label: 'Alert Cooldown', description: 'Minimum seconds between alerts for the same zone', type: 'number', min: 1, max: 600 },
+  ultrasonic_poll_interval_ms: { label: 'Ultrasonic Poll Rate', description: 'How often to read ultrasonic sensors (ms)', type: 'number', min: 100, max: 10000 },
 };
 
 export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<SettingsState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [changePinOpen, setChangePinOpen] = useState(false);
+  const [changingPin, setChangingPin] = useState(false);
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [pinError, setPinError] = useState('');
@@ -44,10 +47,19 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
   useEffect(() => {
     if (!isOpen) return;
+    setLoadError('');
+    setLoading(true);
     fetch('/api/settings')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load settings');
+        return res.json();
+      })
       .then((data) => {
         setSettings(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setLoadError(err.message);
         setLoading(false);
       });
   }, [isOpen]);
@@ -56,14 +68,22 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     if (!settings) return;
     setSaving(true);
     setSaved(false);
-    await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    });
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaveError('');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setSaveError('Failed to save settings. Please try again.');
+      setTimeout(() => setSaveError(''), 3000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleChangePin = async () => {
@@ -73,20 +93,27 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       setPinError('PIN must be at least 4 digits');
       return;
     }
-    const res = await fetch('/api/pin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: newPin, current_pin: currentPin }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      setPinError(data.error);
-      return;
+    setChangingPin(true);
+    try {
+      const res = await fetch('/api/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: newPin, current_pin: currentPin }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setPinError(data.error || 'Failed to update PIN');
+        return;
+      }
+      setPinSuccess('PIN updated!');
+      setCurrentPin('');
+      setNewPin('');
+      setTimeout(() => { setPinSuccess(''); setChangePinOpen(false); }, 1500);
+    } catch {
+      setPinError('Network error. Please try again.');
+    } finally {
+      setChangingPin(false);
     }
-    setPinSuccess('PIN updated!');
-    setCurrentPin('');
-    setNewPin('');
-    setTimeout(() => { setPinSuccess(''); setChangePinOpen(false); }, 1500);
   };
 
   const updateSetting = (key: string, value: string) => {
@@ -127,6 +154,13 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 <div className="flex items-center justify-center py-12">
                   <div className="w-8 h-8 border-2 border-ez-yellow/30 border-t-ez-yellow rounded-full animate-spin" />
                 </div>
+              ) : loadError ? (
+                <div className="text-center py-12">
+                  <p className="text-red-400 mb-4">{loadError}</p>
+                  <GlowButton variant="blue" size="sm" onClick={() => { setLoading(true); setLoadError(''); fetch('/api/settings').then(r => r.json()).then(d => { setSettings(d); setLoading(false); }).catch(() => { setLoadError('Still unable to load settings'); setLoading(false); }); }}>
+                    Retry
+                  </GlowButton>
+                </div>
               ) : settings && (
                 <>
                   {/* Alarm Settings */}
@@ -164,7 +198,8 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                               value={settings[key as keyof SettingsState]}
                               onChange={(e) => updateSetting(key, e.target.value)}
                               className="w-24 bg-ez-navy-light/50 border border-ez-navy-light rounded-lg px-3 py-1.5 text-sm text-ez-white text-right"
-                              min={0}
+                              min={config.min ?? 0}
+                              max={config.max}
                             />
                           )}
                         </div>
@@ -174,9 +209,12 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   </div>
 
                   {/* Save button */}
-                  <GlowButton variant="yellow" size="md" onClick={handleSave} disabled={saving} className="w-full">
-                    {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
-                  </GlowButton>
+                  <div className="flex flex-col gap-2">
+                    <GlowButton variant="yellow" size="md" onClick={handleSave} disabled={saving} className="w-full">
+                      {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Settings'}
+                    </GlowButton>
+                    {saveError && <p className="text-red-400 text-xs text-center">{saveError}</p>}
+                  </div>
 
                   {/* Change PIN Section */}
                   <div className="flex flex-col gap-4">
@@ -202,7 +240,7 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                           />
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-sm text-gray-400">New PIN</label>
+                          <label className="text-sm text-gray-400">New PIN (4-6 digits)</label>
                           <input
                             type="password"
                             value={newPin}
@@ -215,11 +253,11 @@ export default function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                         {pinError && <p className="text-red-400 text-xs">{pinError}</p>}
                         {pinSuccess && <p className="text-green-400 text-xs">{pinSuccess}</p>}
                         <div className="flex gap-2">
-                          <GlowButton variant="yellow" size="sm" onClick={handleChangePin} className="flex-1">
-                            Update PIN
+                          <GlowButton variant="yellow" size="sm" onClick={handleChangePin} disabled={changingPin} className="flex-1">
+                            {changingPin ? 'Updating...' : 'Update PIN'}
                           </GlowButton>
                           <button
-                            onClick={() => { setChangePinOpen(false); setPinError(''); }}
+                            onClick={() => { setChangePinOpen(false); setPinError(''); setCurrentPin(''); setNewPin(''); }}
                             className="px-4 py-2 text-sm text-gray-400 hover:text-ez-white transition-colors"
                           >
                             Cancel

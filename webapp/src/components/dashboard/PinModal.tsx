@@ -73,15 +73,17 @@ export default function PinModal({ isOpen, targetMode, onConfirm, onCancel, erro
               <span className={modeColors[targetMode]}>{modeLabels[targetMode]}</span>
             </h2>
 
-            {/* PIN dots display */}
+            {/* PIN dots display — supports 4-6 digit PINs */}
             <div className="flex justify-center gap-3 my-6">
-              {[0, 1, 2, 3].map((i) => (
+              {[0, 1, 2, 3, 4, 5].map((i) => (
                 <div
                   key={i}
-                  className={`w-5 h-5 rounded-full border-2 transition-all duration-200 ${
+                  className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
                     i < pin.length
-                      ? 'bg-ez-yellow border-ez-yellow'
-                      : 'border-gray-500'
+                      ? 'bg-ez-yellow border-ez-yellow scale-110'
+                      : i < 4
+                      ? 'border-gray-500'
+                      : 'border-gray-700'
                   }`}
                 />
               ))}

@@ -8,46 +8,55 @@ export async function GET() {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data: zones, error: zonesError } = await supabase
-    .from('zones')
-    .select('*')
-    .eq('is_active', true)
-    .order('id');
+  // Fetch zones and latest events in two queries instead of N+1
+  const [zonesResult, eventsResult] = await Promise.all([
+    supabase
+      .from('zones')
+      .select('*')
+      .eq('is_active', true)
+      .order('id'),
+    supabase
+      .from('events')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ]);
 
-  if (zonesError) {
-    return Response.json({ error: zonesError.message }, { status: 500 });
+  if (zonesResult.error) {
+    return Response.json({ error: zonesResult.error.message }, { status: 500 });
   }
 
-  // Get latest event for each zone + determine connection status
-  const zonesWithStatus = await Promise.all(
-    (zones || []).map(async (zone) => {
-      const { data: latestEvent } = await supabase
-        .from('events')
-        .select('*')
-        .eq('zone_id', zone.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+  const zones = zonesResult.data || [];
+  const events = eventsResult.data || [];
 
-      // Zone is disconnected if no data received in last 60 seconds
-      const isConnected = zone.last_seen_at
-        ? Date.now() - new Date(zone.last_seen_at).getTime() < 60000
-        : false;
+  // Build a map of zone_id -> latest event
+  const latestEventByZone: Record<number, typeof events[0]> = {};
+  for (const event of events) {
+    if (!latestEventByZone[event.zone_id]) {
+      latestEventByZone[event.zone_id] = event;
+    }
+  }
 
-      const isTriggered = isConnected && (
-        zone.sensor_type === 'hall'
-          ? latestEvent?.event_type === 'open'
-          : latestEvent?.event_type === 'triggered'
-      );
+  const zonesWithStatus = zones.map((zone) => {
+    const latestEvent = latestEventByZone[zone.id] || null;
 
-      return {
-        ...zone,
-        connected: isConnected,
-        latest_event: latestEvent || null,
-        is_triggered: isTriggered,
-      };
-    })
-  );
+    const isConnected = zone.last_seen_at
+      ? Date.now() - new Date(zone.last_seen_at).getTime() < 60000
+      : false;
+
+    const isTriggered = isConnected && (
+      zone.sensor_type === 'hall'
+        ? latestEvent?.event_type === 'open'
+        : latestEvent?.event_type === 'triggered'
+    );
+
+    return {
+      ...zone,
+      connected: isConnected,
+      latest_event: latestEvent,
+      is_triggered: isTriggered,
+    };
+  });
 
   return Response.json(zonesWithStatus);
 }

@@ -8,13 +8,20 @@ import type { SensorEvent } from '@/lib/types';
 export default function ActivityFeed() {
   const [events, setEvents] = useState<(SensorEvent & { zone?: { name: string } })[]>([]);
 
+  const [error, setError] = useState(false);
+
   const fetchEvents = useCallback(async () => {
     const supabase = createClient();
-    const { data } = await supabase
+    const { data, error: queryError } = await supabase
       .from('events')
       .select('*, zone:zones(name)')
       .order('created_at', { ascending: false })
       .limit(20);
+    if (queryError) {
+      setError(true);
+      return;
+    }
+    setError(false);
     if (data) setEvents(data);
   }, []);
 
@@ -55,7 +62,9 @@ export default function ActivityFeed() {
     <div className="flex flex-col gap-3">
       <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Activity Log</h2>
       <div className="bg-ez-navy-light/20 rounded-xl border border-ez-navy-light/30 overflow-hidden max-h-80 overflow-y-auto">
-        {events.length === 0 ? (
+        {error ? (
+          <div className="p-6 text-center text-red-400">Failed to load activity</div>
+        ) : events.length === 0 ? (
           <div className="p-6 text-center text-gray-500">No activity yet</div>
         ) : (
           <AnimatePresence mode="popLayout">
